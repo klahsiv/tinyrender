@@ -7,8 +7,13 @@ import "core:os"
 Width :: 800
 Height :: 800
 
+Framebuffer :: struct {
+	width, height: int,
+	pixels:        []u8,
+}
+
 Coord :: struct {
-	x, y: i32,
+	x, y: int,
 }
 
 Vertex :: struct {
@@ -26,17 +31,19 @@ Mesh :: struct {
 
 main :: proc() {
 	fmt.println("Hello World")
+	vertices := [3]Coord{{x = 7, y = 3}, {x = 12, y = 37}, {x = 62, y = 53}}
+
 	buf := make([]u8, Width * Height * 3)
 	defer delete(buf)
+	framerbuffer := Framebuffer{Width, Height, buf}
 
-	vertices := [3]Coord{{x = 7, y = 3}, {x = 12, y = 37}, {x = 62, y = 53}}
 	mesh: Mesh = Mesh{}
 	defer delete(mesh.faces)
 	defer delete(mesh.vertices)
-	
+
 	diablo := parse_obj("diablo3_pose.obj", &mesh)
 	//render(vertices, buf)
-	render_mesh(mesh, buf)
+	render_mesh(mesh, &framerbuffer)
 
 	err := write_ppm("Diablo.ppm", Width, Height, buf)
 	if err != nil {
@@ -46,59 +53,60 @@ main :: proc() {
 
 }
 
-render :: proc(vertices: [3]Coord, buf: []u8) {
+render :: proc(vertices: [3]Coord, frameBuffer: ^Framebuffer) {
 
 	a, b, c := vertices[0], vertices[1], vertices[2]
-	line(a, b, buf, Red)
-	line(b, c, buf, Blue)
-	line(c, a, buf, Green)
+	line(a, b, frameBuffer, Red)
+	line(b, c, frameBuffer, Blue)
+	line(c, a, frameBuffer, Green)
 
 	for coord in vertices {
-		set_pixel(int(coord.x), int(coord.y), Width, buf, White)
+		set_pixel(int(coord.x), int(coord.y), frameBuffer, White)
 	}
 }
 
-render_mesh :: proc(mesh: Mesh, buf: []u8) {
+render_mesh :: proc(mesh: Mesh, frameBuffer: ^Framebuffer) {
 
 	vertices := mesh.vertices
 	faces := mesh.faces
 
 	for face in faces {
-		a := vertices[face.x]
-		b := vertices[face.y]
-		c := vertices[face.z]
-		transform_vertex(&a)
-		transform_vertex(&b)
-		transform_vertex(&c)
+		a := project_vertex(vertices[face.x])
+		b := project_vertex(vertices[face.y])
+		c := project_vertex(vertices[face.z])
 
-		line_mesh(a, b, buf, Red)
-		line_mesh(b, c, buf, Red)
-		line_mesh(c, a, buf, Red)
+		line(a, b, frameBuffer, Red)
+		line(b, c, frameBuffer, Red)
+		line(c, a, frameBuffer, Red)
 	}
 
-	/*
+
 	for coord in vertices {
-		set_pixel(int(coord.x), int(coord.y), Width, buf, White)
+		a := project_vertex(coord)
+		set_pixel(int(a.x), int(a.y), frameBuffer, White)
 	}
-	*/
+
 
 }
-
-transform_vertex :: proc(vertex: ^Vertex) {
-	vertex.x = ((vertex.x + 1.0) * 0.5) * f64(Width - 1)
-	vertex.y = (1.0 - (vertex.y + 1.0) * 0.5) * f64(Height - 1)
+project_vertex :: proc(v: Vertex) -> Coord {
+	return Coord {
+		x = int(((v.x + 1.0) * 0.5) * f64(Width - 1)),
+		y = int((1.0 - (v.y + 1.0) * 0.5) * f64(Height - 1)),
+	}
 }
 
-set_pixel :: proc(x, y, width: int, buf: []u8, rgb: [3]u8) {
-	//fmt.println(x, y)
-	idx := (y * width) + x
+set_pixel :: proc(x, y: int, frameBuffer: ^Framebuffer, rgb: [3]u8) {
+	if x < 0 || x >= frameBuffer.width do return
+	if y < 0 || y >= frameBuffer.height do return
+
+	idx := (y * frameBuffer.width) + x
 	idx *= 3
-	buf[idx + 0] = rgb[0]
-	buf[idx + 1] = rgb[1]
-	buf[idx + 2] = rgb[2]
+	frameBuffer.pixels[idx + 0] = rgb[0]
+	frameBuffer.pixels[idx + 1] = rgb[1]
+	frameBuffer.pixels[idx + 2] = rgb[2]
 }
 
-line :: proc(start, end: Coord, buf: []u8, rgb: [3]u8) {
+line :: proc(start, end: Coord, frameBuffer: ^Framebuffer, rgb: [3]u8) {
 	ax, bx := start.x, end.x
 	ay, by := start.y, end.y
 
@@ -118,39 +126,13 @@ line :: proc(start, end: Coord, buf: []u8, rgb: [3]u8) {
 		y := f32(ay) + (f32(by - ay) * t)
 
 		if steep {
-			set_pixel(int(y), int(x), Width, buf, rgb)
+			set_pixel(int(y), int(x), frameBuffer, rgb)
 		} else {
-			set_pixel(int(x), int(y), Width, buf, rgb)
+			set_pixel(int(x), int(y), frameBuffer, rgb)
 		}
 	}
 }
 
-line_mesh :: proc(start, end: Vertex, buf: []u8, rgb: [3]u8) {
-	ax, bx := start.x, end.x
-	ay, by := start.y, end.y
-
-	steep := math.abs(ax - bx) < math.abs(ay - by)
-	if steep {
-		swap(&ax, &ay)
-		swap(&bx, &by)
-	}
-
-	if (ax > bx) {
-		swap(&ax, &bx)
-		swap(&ay, &by)
-	}
-
-	for x := ax; x <= bx; x += 1 {
-		t := f32(x - ax) / f32(bx - ax)
-		y := f32(ay) + (f32(by - ay) * t)
-
-		if steep {
-			set_pixel(int(y), int(x), Width, buf, rgb)
-		} else {
-			set_pixel(int(x), int(y), Width, buf, rgb)
-		}
-	}
-}
 
 swap :: proc(a, b: ^$T) {
 	tmp := a^

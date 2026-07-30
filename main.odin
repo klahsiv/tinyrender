@@ -2,10 +2,11 @@ package main
 
 import "core:fmt"
 import "core:math"
+import "core:math/rand"
 import "core:os"
 
-Width :: 200
-Height :: 200
+Width :: 800
+Height :: 800
 
 Framebuffer :: struct {
 	width, height: int,
@@ -40,20 +41,33 @@ main :: proc() {
 	defer delete(buf)
 	framerbuffer := Framebuffer{Width, Height, buf}
 
-	/*
 	mesh: Mesh = Mesh{}
 	defer delete(mesh.faces)
 	defer delete(mesh.vertices)
+	body := parse_obj("Assets/African_Head/african_head.obj", &mesh)
 
-	diablo := parse_obj("diablo3_pose.obj", &mesh)
-	//render(vertices, buf)
+	eyesMesh: Mesh = Mesh{}
+	defer delete(eyesMesh.faces)
+	defer delete(eyesMesh.vertices)
+	eyes := parse_obj("Assets/African_Head/african_head_eye_inner.obj", &eyesMesh)
+
+	headMesh: Mesh = Mesh{}
+	defer delete(headMesh.faces)
+	defer delete(headMesh.vertices)
+	head := parse_obj("Assets/African_Head/african_head_eye_outer.obj", &headMesh)
+
 	render_mesh(mesh, &framerbuffer)
-	*/
+	//render_mesh(eyesMesh, &framerbuffer)
+	//render_mesh(headMesh, &framerbuffer)
 
+
+	//diablo := parse_obj("diablo3_pose.obj", &mesh)
+	/*
 	triangle(vertices1, &framerbuffer, Red)
 	triangle(vertices2, &framerbuffer, Green)
 	triangle(vertices3, &framerbuffer, Blue)
-	err := write_ppm("Triangle.ppm", Width, Height, buf)
+	*/
+	err := write_ppm("African_Head.ppm", Width, Height, buf)
 	if err != nil {
 		fmt.println(err)
 		panic("Error in writing ppm file")
@@ -80,6 +94,7 @@ triangle :: proc(vertices: [3]Coord, frameBuffer: ^Framebuffer, colour: [3]u8) {
 
 	fill_triangle(a, b, c, colour, frameBuffer)
 
+	/*
 	line(a, b, frameBuffer, colour)
 	line(b, c, frameBuffer, colour)
 	line(c, a, frameBuffer, colour)
@@ -88,41 +103,46 @@ triangle :: proc(vertices: [3]Coord, frameBuffer: ^Framebuffer, colour: [3]u8) {
 	for coord in vertices {
 		set_pixel(int(coord.x), int(coord.y), frameBuffer, White)
 	}
+	*/
 }
 
 fill_triangle :: proc(a, b, c: Coord, colour: [3]u8, frameBuffer: ^Framebuffer) {
 
-	y1 := a.y
-	y2 := c.y
+	totalHeight := c.y - a.y
 
-	s1 := f64(b.y - a.y) / f64(b.x - a.x)
-	s2 := f64(c.y - a.y) / f64(c.x - a.x)
+	// Upper Triangle
+	if (b.y != a.y) {
+		segmentHeight := b.y - a.y
 
-	for y := y1; y <= y2; y += 1 {
+		for y := a.y; y <= b.y; y += 1 {
+			x1 := a.x + ((c.x - a.x) * (y - a.y)) / totalHeight
+			x2 := a.x + ((b.x - a.x) * (y - a.y)) / segmentHeight
 
-		tac := f64(y - a.y) / f64(c.y - a.y)
-		tab := f64(y - a.y) / f64(b.y - a.y)
-		tbc := f64(y - b.y) / f64(c.y - b.y)
+			if x1 > x2 {
+				swap(&x1, &x2)
+			}
 
-		xac := f64(a.x) + f64(c.x - a.x) * tac
-		xab := f64(a.x) + f64(b.x - a.x) * tab
-		xbc := f64(b.x) + f64(c.x - b.x) * tbc
-
-		x1, x2: int
-		if y <= b.y {
-			x1 = int(xac)
-			x2 = int(xab)
-		} else {
-			x1 = int(xac)
-			x2 = int(xbc)
+			for x := x1; x <= x2; x += 1 {
+				set_pixel(x, y, frameBuffer, colour)
+			}
 		}
+	}
 
-		if x1 > x2 {
-			swap(&x1, &x2)
-		}
+	// Lower triangle
+	if b.y != c.y {
+		segmentHeight := c.y - b.y
 
-		for x := x1; x <= x2; x += 1 {
-			set_pixel(x, y, frameBuffer, colour)
+		for y := b.y; y <= c.y; y += 1 {
+			x1 := a.x + ((c.x - a.x) * (y - a.y)) / totalHeight
+			x2 := b.x + ((c.x - b.x) * (y - b.y)) / segmentHeight
+
+			if x1 > x2 {
+				swap(&x1, &x2)
+			}
+
+			for x := x1; x <= x2; x += 1 {
+				set_pixel(x, y, frameBuffer, colour)
+			}
 		}
 	}
 }
@@ -149,16 +169,28 @@ render_mesh :: proc(mesh: Mesh, frameBuffer: ^Framebuffer) {
 		b := project_vertex(vertices[face.y])
 		c := project_vertex(vertices[face.z])
 
+		col := [3]u8{0, 0, 0}
 
-		line(a, b, frameBuffer, Red)
-		line(b, c, frameBuffer, Red)
-		line(c, a, frameBuffer, Red)
+		for i := 0; i < 3; i += 1 {
+			col[i] = u8(rand.int31_max(256))
+		}
+
+
+		coords := [3]Coord{a, b, c}
+
+		triangle(coords, frameBuffer, col)
+
+		//line(a, b, frameBuffer, Red)
+		//line(b, c, frameBuffer, Red)
+		//line(c, a, frameBuffer, Red)
 	}
 
+	/*
 	for coord in vertices {
 		a := project_vertex(coord)
 		set_pixel(int(a.x), int(a.y), frameBuffer, White)
 	}
+	*/
 }
 
 project_vertex :: proc(v: Vertex) -> Coord {

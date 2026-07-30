@@ -60,14 +60,12 @@ main :: proc() {
 	//render_mesh(eyesMesh, &framerbuffer)
 	//render_mesh(headMesh, &framerbuffer)
 
+	//triangle(vertices1, &framerbuffer, Red)
+	//triangle(vertices2, &framerbuffer, Green)
+	//triangle(vertices3, &framerbuffer, Blue)
 
-	//diablo := parse_obj("diablo3_pose.obj", &mesh)
-	/*
-	triangle(vertices1, &framerbuffer, Red)
-	triangle(vertices2, &framerbuffer, Green)
-	triangle(vertices3, &framerbuffer, Blue)
-	*/
-	err := write_ppm("African_Head.ppm", Width, Height, buf)
+
+	err := write_ppm("Triangle.ppm", Width, Height, buf)
 	if err != nil {
 		fmt.println(err)
 		panic("Error in writing ppm file")
@@ -79,30 +77,40 @@ triangle :: proc(vertices: [3]Coord, frameBuffer: ^Framebuffer, colour: [3]u8) {
 
 	a, b, c := vertices[0], vertices[1], vertices[2]
 
-	if (a.y > b.y) {
-		swap(&a.x, &b.x)
-		swap(&a.y, &b.y)
-	}
-	if (a.y > c.y) {
-		swap(&a.x, &c.x)
-		swap(&a.y, &c.y)
-	}
-	if (b.y > c.y) {
-		swap(&c.x, &b.x)
-		swap(&c.y, &b.y)
+	bbminx := min(a.x, b.x, c.x)
+	bbminy := min(a.y, b.y, c.y)
+
+	bbmaxx := max(a.x, b.x, c.x)
+	bbmaxy := max(a.y, b.y, c.y)
+
+	total_area := signed_triangle_area(a, b, c)
+	if total_area < 1 {
+		return
 	}
 
-	fill_triangle(a, b, c, colour, frameBuffer)
+	for x := bbminx; x <= bbmaxx; x += 1 {
+		for y := bbminy; y <= bbmaxy; y += 1 {
+			cur := Coord{x, y}
+			alpha := signed_triangle_area(cur, b, c) / total_area
+			beta := signed_triangle_area(cur, c, a) / total_area
+			gamma := signed_triangle_area(cur, a, b) / total_area
 
+			if alpha < 0 || beta < 0 || gamma < 0 {
+				continue
+			}
+
+			set_pixel(x, y, frameBuffer, colour)
+		}
+	}
+
+}
+
+signed_triangle_area :: proc(a, b, c: Coord) -> f64 {
+	return 0.5 * f64((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x))
 	/*
-	line(a, b, frameBuffer, colour)
-	line(b, c, frameBuffer, colour)
-	line(c, a, frameBuffer, colour)
-
-
-	for coord in vertices {
-		set_pixel(int(coord.x), int(coord.y), frameBuffer, White)
-	}
+	area := f64((b.y - a.y) * (b.x + a.x) + (c.y - b.y) * (c.x + b.x) + (a.y - c.y) * (a.x + c.x))
+	area = (area * 0.5)
+	return area
 	*/
 }
 
@@ -170,27 +178,14 @@ render_mesh :: proc(mesh: Mesh, frameBuffer: ^Framebuffer) {
 		c := project_vertex(vertices[face.z])
 
 		col := [3]u8{0, 0, 0}
-
 		for i := 0; i < 3; i += 1 {
 			col[i] = u8(rand.int31_max(256))
 		}
-
-
 		coords := [3]Coord{a, b, c}
 
 		triangle(coords, frameBuffer, col)
 
-		//line(a, b, frameBuffer, Red)
-		//line(b, c, frameBuffer, Red)
-		//line(c, a, frameBuffer, Red)
 	}
-
-	/*
-	for coord in vertices {
-		a := project_vertex(coord)
-		set_pixel(int(a.x), int(a.y), frameBuffer, White)
-	}
-	*/
 }
 
 project_vertex :: proc(v: Vertex) -> Coord {

@@ -14,7 +14,7 @@ Framebuffer :: struct {
 }
 
 Coord :: struct {
-	x, y: int,
+	x, y, z: int,
 }
 
 Vertex :: struct {
@@ -33,6 +33,7 @@ Mesh :: struct {
 main :: proc() {
 	fmt.println("Hello World")
 
+	vertices := [3]Coord{{x = 7, y = 3}, {x = 12, y = 37}, {x = 62, y = 53}}
 	vertices1 := [3]Coord{{x = 7, y = 45}, {x = 35, y = 100}, {x = 45, y = 60}}
 	vertices2 := [3]Coord{{x = 120, y = 35}, {x = 90, y = 5}, {x = 45, y = 110}}
 	vertices3 := [3]Coord{{x = 115, y = 83}, {x = 80, y = 90}, {x = 85, y = 120}}
@@ -41,31 +42,29 @@ main :: proc() {
 	defer delete(buf)
 	framerbuffer := Framebuffer{Width, Height, buf}
 
-	mesh: Mesh = Mesh{}
-	defer delete(mesh.faces)
-	defer delete(mesh.vertices)
-	body := parse_obj("Assets/African_Head/african_head.obj", &mesh)
+	zbuf := make([]u8, Width * Height * 3)
+	defer delete(zbuf)
+	zbuffer := Framebuffer{Width, Height, zbuf}
 
-	eyesMesh: Mesh = Mesh{}
-	defer delete(eyesMesh.faces)
-	defer delete(eyesMesh.vertices)
-	eyes := parse_obj("Assets/African_Head/african_head_eye_inner.obj", &eyesMesh)
+	diabloMesh: Mesh = Mesh{}
+	defer delete(diabloMesh.faces)
+	defer delete(diabloMesh.vertices)
+	body := parse_obj("Assets/Diablo/diablo3_pose.obj", &diabloMesh)
+
+	africanHeadMesh: Mesh = Mesh{}
+	defer delete(africanHeadMesh.faces)
+	defer delete(africanHeadMesh.vertices)
+	eyes := parse_obj("Assets/African_Head/african_head.obj", &africanHeadMesh)
 
 	headMesh: Mesh = Mesh{}
 	defer delete(headMesh.faces)
 	defer delete(headMesh.vertices)
 	head := parse_obj("Assets/African_Head/african_head_eye_outer.obj", &headMesh)
 
-	render_mesh(mesh, &framerbuffer)
-	//render_mesh(eyesMesh, &framerbuffer)
-	//render_mesh(headMesh, &framerbuffer)
+	render_mesh(africanHeadMesh, &framerbuffer, &zbuffer)
 
-	//triangle(vertices1, &framerbuffer, Red)
-	//triangle(vertices2, &framerbuffer, Green)
-	//triangle(vertices3, &framerbuffer, Blue)
-
-
-	err := write_ppm("Triangle.ppm", Width, Height, buf)
+	err := write_ppm("Head_Triangles.ppm", Width, Height, buf)
+	err = write_ppm("Head_Triangles_z.ppm", Width, Height, zbuf)
 	if err != nil {
 		fmt.println(err)
 		panic("Error in writing ppm file")
@@ -73,7 +72,7 @@ main :: proc() {
 
 }
 
-triangle :: proc(vertices: [3]Coord, frameBuffer: ^Framebuffer, colour: [3]u8) {
+triangle :: proc(vertices: [3]Coord, frameBuffer, zbuffer: ^Framebuffer, colour: [3]u8) {
 
 	a, b, c := vertices[0], vertices[1], vertices[2]
 
@@ -84,13 +83,13 @@ triangle :: proc(vertices: [3]Coord, frameBuffer: ^Framebuffer, colour: [3]u8) {
 	bbmaxy := max(a.y, b.y, c.y)
 
 	total_area := signed_triangle_area(a, b, c)
-	if total_area < 1 {
+	if total_area == 0 {
 		return
 	}
 
 	for x := bbminx; x <= bbmaxx; x += 1 {
 		for y := bbminy; y <= bbmaxy; y += 1 {
-			cur := Coord{x, y}
+			cur := Coord{x, y, 0}
 			alpha := signed_triangle_area(cur, b, c) / total_area
 			beta := signed_triangle_area(cur, c, a) / total_area
 			gamma := signed_triangle_area(cur, a, b) / total_area
@@ -99,7 +98,12 @@ triangle :: proc(vertices: [3]Coord, frameBuffer: ^Framebuffer, colour: [3]u8) {
 				continue
 			}
 
+			z := u8((alpha * f64(a.z) + beta * f64(b.z) + gamma * f64(c.z)))
+			if z <= get_pixel(x, y, zbuffer)[0] {
+				continue
+			}
 			set_pixel(x, y, frameBuffer, colour)
+			set_pixel(x, y, zbuffer, [3]u8{z, z, z})
 		}
 	}
 
@@ -107,52 +111,6 @@ triangle :: proc(vertices: [3]Coord, frameBuffer: ^Framebuffer, colour: [3]u8) {
 
 signed_triangle_area :: proc(a, b, c: Coord) -> f64 {
 	return 0.5 * f64((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x))
-	/*
-	area := f64((b.y - a.y) * (b.x + a.x) + (c.y - b.y) * (c.x + b.x) + (a.y - c.y) * (a.x + c.x))
-	area = (area * 0.5)
-	return area
-	*/
-}
-
-fill_triangle :: proc(a, b, c: Coord, colour: [3]u8, frameBuffer: ^Framebuffer) {
-
-	totalHeight := c.y - a.y
-
-	// Upper Triangle
-	if (b.y != a.y) {
-		segmentHeight := b.y - a.y
-
-		for y := a.y; y <= b.y; y += 1 {
-			x1 := a.x + ((c.x - a.x) * (y - a.y)) / totalHeight
-			x2 := a.x + ((b.x - a.x) * (y - a.y)) / segmentHeight
-
-			if x1 > x2 {
-				swap(&x1, &x2)
-			}
-
-			for x := x1; x <= x2; x += 1 {
-				set_pixel(x, y, frameBuffer, colour)
-			}
-		}
-	}
-
-	// Lower triangle
-	if b.y != c.y {
-		segmentHeight := c.y - b.y
-
-		for y := b.y; y <= c.y; y += 1 {
-			x1 := a.x + ((c.x - a.x) * (y - a.y)) / totalHeight
-			x2 := b.x + ((c.x - b.x) * (y - b.y)) / segmentHeight
-
-			if x1 > x2 {
-				swap(&x1, &x2)
-			}
-
-			for x := x1; x <= x2; x += 1 {
-				set_pixel(x, y, frameBuffer, colour)
-			}
-		}
-	}
 }
 
 render :: proc(vertices: [3]Coord, frameBuffer: ^Framebuffer) {
@@ -167,7 +125,7 @@ render :: proc(vertices: [3]Coord, frameBuffer: ^Framebuffer) {
 	}
 }
 
-render_mesh :: proc(mesh: Mesh, frameBuffer: ^Framebuffer) {
+render_mesh :: proc(mesh: Mesh, frameBuffer, zbuffer: ^Framebuffer) {
 
 	vertices := mesh.vertices
 	faces := mesh.faces
@@ -183,7 +141,7 @@ render_mesh :: proc(mesh: Mesh, frameBuffer: ^Framebuffer) {
 		}
 		coords := [3]Coord{a, b, c}
 
-		triangle(coords, frameBuffer, col)
+		triangle(coords, frameBuffer, zbuffer, col)
 
 	}
 }
@@ -192,9 +150,22 @@ project_vertex :: proc(v: Vertex) -> Coord {
 	return Coord {
 		x = int(((v.x + 1.0) * 0.5) * f64(Width - 1)),
 		y = int((1.0 - (v.y + 1.0) * 0.5) * f64(Height - 1)),
+		z = int((v.z + 1.0) * 255.0 * 0.5),
 	}
 }
 
+get_pixel :: proc(x, y: int, frameBuffer: ^Framebuffer) -> [3]u8 {
+	if x < 0 || x >= frameBuffer.width do return [3]u8{}
+	if y < 0 || y >= frameBuffer.height do return [3]u8{}
+
+	idx := (y * frameBuffer.width) + x
+	idx *= 3
+	return [3]u8 {
+		frameBuffer.pixels[idx + 0],
+		frameBuffer.pixels[idx + 1],
+		frameBuffer.pixels[idx + 2],
+	}
+}
 
 set_pixel :: proc(x, y: int, frameBuffer: ^Framebuffer, rgb: [3]u8) {
 	if x < 0 || x >= frameBuffer.width do return
